@@ -42,7 +42,7 @@ $ docker-compose up -d
 POSTを送信する際には，`file`パラメータにコンパイル対象のZipファイルを指定します。Zipファイルは，`main.cpp`をルートディレクトリに含む必要があります。 `user_id`パラメータには，コンパイル対象のユーザーIDを指定します。
 
 ```bash
-$ curl -X 'POST' \
+curl -X 'POST' \
   'http://localhost:8000/api/compile/codal?user_id=hoge' \
   -H 'accept: application/json' \
   -H 'Content-Type: multipart/form-data' \
