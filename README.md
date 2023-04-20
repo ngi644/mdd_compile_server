@@ -34,7 +34,7 @@ $ docker-compose up -d
 
 ### コンパイルの要求
 
-`/compile/{target}`にPOSTリクエストを送信することで，コンパイルを要求することができます。
+`/api/compile/{target}`にPOSTリクエストを送信することで，コンパイルを要求することができます。
 `target`には，コンパイル対象のプログラミング言語を指定します。
 
 #### CODAL
@@ -50,6 +50,8 @@ $ curl -X 'POST' \
 ```
 
 ### コンパイル結果の取得
+
+`/api/compile/{task_id}/result`にGETリクエストを送信することで，コンパイル結果を取得することができます。
 
 ```bash
 curl -X 'GET' \
