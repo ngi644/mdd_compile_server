@@ -35,12 +35,11 @@ def get_db():
 
 
 @app.post("/api/compile/codal")
-async def compile_codal(file: UploadFile = File(...), user_id: Optional[str] = None, db: Session = Depends(get_db)):
+async def compile_codal(file: UploadFile = File(...), user_id: Optional[str] = None):
     """ FastAPI から Celery にタスクを送信する
 
     Args: file (UploadFile): アップロードされたファイル
         user_id (Optional[str]): ユーザーID
-        db (Session): DB への接続
     Returns: dict: タスクID
     """
     source_code = await file.read()
@@ -54,8 +53,6 @@ async def get_result(task_id: str, db: Session = Depends(get_db)):
     """ タスクの実行結果を取得する
      
     Args: task_id (str): タスクID
-        db (Session): DB への接続
-
     Returns: FileResponse: HEXファイル
     """
     task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
