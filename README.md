@@ -32,6 +32,9 @@ $ docker-compose up -d
 
 ## APIの使い方
 
+FastAPIを用いてAPIを実装しています。`http://localhost:8000/docs`にアクセスすることで，APIの仕様を確認することができます。
+docsページでは，APIの実行も行うことができます。
+
 ### コンパイルの要求
 
 `/api/compile/{target}`にPOSTリクエストを送信することで，コンパイルを要求することができます。
