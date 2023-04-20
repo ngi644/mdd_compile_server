@@ -30,7 +30,16 @@ $ docker-compose build
 $ docker-compose up -d
 ```
 
+## APIの使い方
+
 ### コンパイルの要求
+
+`/compile/{target}`にPOSTリクエストを送信することで，コンパイルを要求することができます。
+`target`には，コンパイル対象のプログラミング言語を指定します。
+
+#### CODAL
+
+POSTを送信する際には，`file`パラメータにコンパイル対象のZipファイルを指定します。Zipファイルは，`main.cpp`をルートディレクトリに含む必要があります。 `user_id`パラメータには，コンパイル対象のユーザーIDを指定します。
 
 ```bash
 $ curl -X 'POST' \
