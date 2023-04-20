@@ -1,0 +1,1 @@
+SQLALCHEMY_DATABASE_URL = "postgresql://user:password@db:5432/database_name"

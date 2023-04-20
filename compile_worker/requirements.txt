@@ -1,0 +1,5 @@
+celery
+docker
+redis
+sqlalchemy
+psycopg2

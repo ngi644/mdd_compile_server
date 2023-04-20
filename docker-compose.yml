@@ -1,0 +1,68 @@
+version: '3.9'
+
+services:
+  db-init:
+    image: postgres:latest
+    container_name: db-init
+    depends_on:
+      - db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: compile_results
+    volumes:
+      - ./init_db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init_db/wait-for-it.sh:/wait-for-it.sh
+    command: ["/bin/bash", "-c", "chmod +x /wait-for-it.sh && /wait-for-it.sh db:5432 -t 60 && psql -h db -U user -d compile_results -f /docker-entrypoint-initdb.d/init.sql"]
+
+  api_server:
+    build:
+      context: ./
+      dockerfile: ./api_server/Dockerfile
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+
+  compile_worker:
+    cpus: 2
+    build:
+      context: ./
+      dockerfile: ./compile_worker/Dockerfile
+    command: celery -A task worker --loglevel=info -c 2 # -c 2 means 2 concurrent tasks
+    depends_on:
+      - db
+      - redis
+      - codal_env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+#  micropython_env:
+#    build:
+#      context: ./micropython_env
+
+  codal_env:
+    build:
+      context: ./codal_env
+    command: ["/bin/bash", "-c", "tail -f /dev/null"]
+
+  redis:
+    image: "redis:latest"
+    ports:
+      - "6379:6379"
+
+  db:
+    image: "postgres:latest"
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: compile_results
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+
+
+volumes:
+  postgres_data:
