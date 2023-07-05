@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, Depends, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -7,6 +7,7 @@ from shared.database import SessionLocal, engine
 from shared import models
 from celery_app import app as celery_app
 import base64
+from urllib.parse import urljoin
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -35,17 +36,19 @@ def get_db():
 
 
 @app.post("/api/compile/codal")
-async def compile_codal(file: UploadFile = File(...), user_id: Optional[str] = None):
+async def compile_codal(request: Request, file: UploadFile = File(...), user_id: Optional[str] = None):
     """ FastAPI から Celery にタスクを送信する
 
     Args: file (UploadFile): アップロードされたファイル
         user_id (Optional[str]): ユーザーID
-    Returns: dict: タスクID
+    Returns: dict: タスクIDと結果取得用のURL
     """
     source_code = await file.read()
     source_code_str = base64.b64encode(source_code).decode('utf-8')
     task = celery_app.send_task("compile_worker.tasks.compile_codal", args=[source_code_str, user_id])
-    return {"task_id": task.id}
+    result_url = urljoin(request.url._url, f"/api/compile/{task.id}/result")
+    return {"task_id": task.id,
+             "url": result_url}
 
 
 @app.get("/api/compile/{task_id}/result")
@@ -65,4 +68,4 @@ async def get_result(task_id: str, db: Session = Depends(get_db)):
         f.write(task_result.result)
 
     # FileResponseを使ってHEXファイルをクライアントに提供
-    return FileResponse(tmp_hex_path, media_type="application/octet-stream", filename=f"{task_id}.hex")
+    return FileResponse(tmp_hex_path, media_type="application/octet-stream", filename=f"microbitv2.hex")
