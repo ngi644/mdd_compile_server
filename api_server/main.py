@@ -77,16 +77,16 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
         <html lang="ja">
             <head>
                 <meta charset="UTF-8">
-                <title>ダウンロードが開始されない場合は，数秒後にページをリロードしてください．</title>
-
-                # 8秒後に自動リロードする
+                <title>ファイル生成中</title>
+            </head>
+            <body>
+                <h2>ファイル生成中</h2>
+                <p>現在，サーバーでファイルを生成中です．8秒後に再度ダウンロードを行います．</p>
+                <p>下記リンクをクリックすることで直接ダウンロードします．</p>
+                <a href="{request.url._url}" target="_blank" rel="noopener noreferrer">ファイルをダウンロード</a>
                 <script type="text/javascript">
                     setTimeout("location.reload()", 8000);
                 </script>
-            </head>
-            <body>
-                <h2>ダウンロードが開始されない場合は，数秒後にページをリロードしてください．</h2>
-                <a href="{request.url._url}">リロード</a>
             </body>
         </html>
         """
