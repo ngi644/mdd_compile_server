@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, UploadFile, File, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -52,7 +52,7 @@ async def compile_codal(request: Request, file: UploadFile = File(...), user_id:
 
 
 @app.get("/api/compile/{task_id}/result")
-async def get_result(task_id: str, db: Session = Depends(get_db)):
+async def get_result(request: Request, task_id: str, db: Session = Depends(get_db)):
     """ タスクの実行結果を取得する
      
     Args: task_id (str): タスクID
@@ -62,10 +62,34 @@ async def get_result(task_id: str, db: Session = Depends(get_db)):
     if task_result is None:
         raise HTTPException(status_code=404, detail="Result not found")
 
-    # 一時的にHEXファイルを保存
-    tmp_hex_path = f"/tmp/{task_id}.hex"
-    with open(tmp_hex_path, "wb") as f:
-        f.write(task_result.result)
+    if task_result.result is not None:
+        # 一時的にHEXファイルを保存
+        tmp_hex_path = f"/tmp/{task_id}.hex"
+        with open(tmp_hex_path, "wb") as f:
+            f.write(task_result.result)
 
-    # FileResponseを使ってHEXファイルをクライアントに提供
-    return FileResponse(tmp_hex_path, media_type="application/octet-stream", filename=f"microbitv2.hex")
+        # FileResponseを使ってHEXファイルをクライアントに提供
+        return FileResponse(tmp_hex_path, media_type="application/octet-stream", filename=f"microbitv2.hex", status_code=200)
+    else:
+        # タスクが完了していない場合は、再度，リロードするようにメッセージを返すHTTPレスポンスを返す
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="ja">
+            <head>
+                <meta charset="UTF-8">
+                <title>ダウンロードが開始されない場合は，数秒後にページをリロードしてください．</title>
+
+                # 8秒後に自動リロードする
+                <script type="text/javascript">
+                    setTimeout("location.reload()", 8000);
+                </script>
+            </head>
+            <body>
+                <h2>ダウンロードが開始されない場合は，数秒後にページをリロードしてください．</h2>
+                <a href="{request.url._url}">リロード</a>
+            </body>
+        </html>
+        """
+        return HTMLResponse(content=html, media_type="text/html", status_code=200)
+
+
