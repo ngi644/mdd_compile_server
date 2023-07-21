@@ -47,6 +47,7 @@ async def compile_codal(request: Request, file: UploadFile = File(...), user_id:
     source_code_str = base64.b64encode(source_code).decode('utf-8')
     task = celery_app.send_task("compile_worker.tasks.compile_codal", args=[source_code_str, user_id])
     result_url = urljoin(request.url._url, f"/api/compile/{task.id}/result")
+    result_url = result_url.replace("http://", "//")
     return {"task_id": task.id,
              "url": result_url}
 
