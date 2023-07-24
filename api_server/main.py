@@ -35,6 +35,12 @@ def get_db():
         db.close()
 
 
+def _remove_protocol(url: str):
+    """ URLからプロトコルを除去する
+    """
+    return url.replace("http://", "//")
+
+
 @app.post("/api/compile/codal")
 async def compile_codal(request: Request, file: UploadFile = File(...), user_id: Optional[str] = None):
     """ FastAPI から Celery にタスクを送信する
@@ -47,9 +53,44 @@ async def compile_codal(request: Request, file: UploadFile = File(...), user_id:
     source_code_str = base64.b64encode(source_code).decode('utf-8')
     task = celery_app.send_task("compile_worker.tasks.compile_codal", args=[source_code_str, user_id])
     result_url = urljoin(request.url._url, f"/api/compile/{task.id}/result")
-    result_url = result_url.replace("http://", "//")
     return {"task_id": task.id,
-             "url": result_url}
+             "url": _remove_protocol(result_url)}
+
+
+def _get_result_url(base_url: str, task_id: str):
+    """ タスクの結果取得用のURLを生成する
+    """
+    result_url = urljoin(base_url, f"/api/compile/{task_id}/result")
+    return _remove_protocol(result_url)
+
+
+def _get_time_to_compile(modified_at, created_at):
+    """ コンパイル時間を取得する
+    """
+    if modified_at is None:
+        return None
+    if created_at is None:
+        return None
+    return (modified_at - created_at).total_seconds()
+
+
+@app.get("/api/compile/list")
+async def get_task_list(request: Request, db: Session = Depends(get_db)):
+    """
+    タスクの一覧を最新から100件取得する
+    """
+    base_url = request.url._url
+    # task_idとuser_idとコンパイル時間，結果取得用のURLを取得する
+    
+    task_results = db.query(models.TaskResult.task_id, models.TaskResult.user_id, models.TaskResult.created_at,models.TaskResult.modified_at).order_by(models.TaskResult.created_at.desc()).limit(100).all()
+    tasks = [dict(task_id=task_result[0], user_id=task_result[1], 
+                  result_url=_get_result_url(base_url, task_result[0]),
+                  created_at=task_result[2], modified_at=task_result[3],
+                  time_to_compile=_get_time_to_compile(task_result[3], task_result[2])
+                  ) for task_result in task_results]
+
+    print(task_results)
+    return {"tasks": tasks}
 
 
 @app.get("/api/compile/{task_id}/result")
