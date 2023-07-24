@@ -62,3 +62,15 @@ curl -X 'GET' \
   -H 'accept: application/json'
 ```
 
+### コンパイルタスクの一覧の取得
+
+`/api/compile/list`にGETリクエストを送信することで，コンパイルタスクの一覧を最新から100件を取得することができます。
+
+```bash
+curl -X 'GET' \
+  'http://localhost:8000/api/compile/list' \
+  -H 'accept: application/json'
+```
+
+
+
