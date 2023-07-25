@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, UploadFile, File, Depends, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, Depends, HTTPException, Form
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -42,7 +42,7 @@ def _remove_protocol(url: str):
 
 
 @app.post("/api/compile/codal")
-async def compile_codal(request: Request, file: UploadFile = File(...), user_id: Optional[str] = None):
+async def compile_codal(request: Request, file: UploadFile = File(...), user_id: str = Form(None)):
     """ FastAPI から Celery にタスクを送信する
 
     Args: file (UploadFile): アップロードされたファイル
