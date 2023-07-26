@@ -126,7 +126,7 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
                 <body>
                     <h2>コンパイルエラー</h2>
                     <p>コンパイル中にエラーが発生しました．</p>
-                    <p>エラー内容:</p>
+                    <p>Traceback:</p>
                     <pre>{task_result.trace_back}</pre>
                 </body>
             </html>
