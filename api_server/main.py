@@ -105,13 +105,33 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Result not found")
 
     if task_result.result is not None:
-        # 一時的にHEXファイルを保存
-        tmp_hex_path = f"/tmp/{task_id}.hex"
-        with open(tmp_hex_path, "wb") as f:
-            f.write(task_result.result)
 
-        # FileResponseを使ってHEXファイルをクライアントに提供
-        return FileResponse(tmp_hex_path, media_type="application/octet-stream", filename=f"microbitv2.hex", status_code=200)
+        if task_result.result != b"":
+            # 一時的にHEXファイルを保存
+            tmp_hex_path = f"/tmp/{task_id}.hex"
+            with open(tmp_hex_path, "wb") as f:
+                f.write(task_result.result)
+
+            # FileResponseを使ってHEXファイルをクライアントに提供
+            return FileResponse(tmp_hex_path, media_type="application/octet-stream", filename=f"microbitv2.hex", status_code=200)
+        else:
+            # HEXファイルが空の場合は，エラー内容を返す
+            html = f"""
+            <!DOCTYPE html>
+            <html lang="ja">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>コンパイルエラー</title>
+                </head>
+                <body>
+                    <h2>コンパイルエラー</h2>
+                    <p>コンパイル中にエラーが発生しました．</p>
+                    <p>エラー内容:</p>
+                    <pre>{task_result.trace_back}</pre>
+                </body>
+            </html>
+            """
+            return HTMLResponse(content=html, media_type="text/html", status_code=200)
     else:
         # タスクが完了していない場合は、再度，リロードするようにメッセージを返すHTTPレスポンスを返す
         html = f"""
