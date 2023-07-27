@@ -4,3 +4,4 @@ celery
 redis
 sqlalchemy
 psycopg2
+Gunicorn
