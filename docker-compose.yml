@@ -19,7 +19,8 @@ services:
     build:
       context: ./
       dockerfile: ./api_server/Dockerfile
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    command: gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:8000
+    #command: uvicorn main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     depends_on:
@@ -27,11 +28,11 @@ services:
       - redis
 
   compile_worker:
-    cpus: 2
+    cpus: 1
     build:
       context: ./
       dockerfile: ./compile_worker/Dockerfile
-    command: celery -A task worker --loglevel=info -c 2 # -c 2 means 2 concurrent tasks
+    command: celery -A task worker --loglevel=info -c 1 # -c 2 means 2 concurrent tasks
     depends_on:
       - db
       - redis
