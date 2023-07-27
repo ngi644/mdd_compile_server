@@ -88,9 +88,27 @@ async def get_task_list(request: Request, db: Session = Depends(get_db)):
                   created_at=task_result[2], modified_at=task_result[3],
                   time_to_compile=_get_time_to_compile(task_result[3], task_result[2])
                   ) for task_result in task_results]
-
-    print(task_results)
     return {"tasks": tasks}
+
+
+_html = f"""
+    <!DOCTYPE html>
+    <html lang="ja">
+        <head>
+            <meta charset="UTF-8">
+            <title>ファイル生成中</title>
+        </head>
+        <body>
+            <h2>ファイル生成中</h2>
+            <p>現在，サーバーでファイルを生成中です．自動的に再度ダウンロードを試みます．</p>
+            <p>しばらくお待ちください．</p>
+            <p>ファイルのダウンロードが開始されない時は，ページをリロードしてください．</p>
+            <script type="text/javascript">
+                setTimeout("location.reload()", 4000);
+            </script>
+        </body>
+    </html>
+    """
 
 
 @app.get("/api/compile/{task_id}/result")
@@ -102,7 +120,8 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
     """
     task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
     if task_result is None:
-        raise HTTPException(status_code=404, detail="Result not found")
+        return HTMLResponse(content=_html, media_type="text/html", status_code=200)
+        #raise HTTPException(status_code=404, detail="Result not found")
 
     if task_result.result is not None:
 
@@ -134,23 +153,7 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
             return HTMLResponse(content=html, media_type="text/html", status_code=200)
     else:
         # タスクが完了していない場合は、再度，リロードするようにメッセージを返すHTTPレスポンスを返す
-        html = f"""
-        <!DOCTYPE html>
-        <html lang="ja">
-            <head>
-                <meta charset="UTF-8">
-                <title>ファイル生成中</title>
-            </head>
-            <body>
-                <h2>ファイル生成中</h2>
-                <p>現在，サーバーでファイルを生成中です．8秒後に再度ダウンロードを試みます．</p>
-                <p>ファイルのダウンロードが開始されない時は，ページをリロードしてください．</p>
-                <script type="text/javascript">
-                    setTimeout("location.reload()", 8000);
-                </script>
-            </body>
-        </html>
-        """
-        return HTMLResponse(content=html, media_type="text/html", status_code=200)
+
+        return HTMLResponse(content=_html, media_type="text/html", status_code=200)
 
 
