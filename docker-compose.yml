@@ -28,11 +28,11 @@ services:
       - redis
 
   compile_worker:
-    cpus: 1
+    cpus: 2
     build:
       context: ./
       dockerfile: ./compile_worker/Dockerfile
-    command: celery -A task worker --loglevel=info -c 1 # -c 2 means 2 concurrent tasks
+    command: celery -A task worker --pool=prefork --loglevel=info -c 1 # -c 2 means 2 concurrent tasks
     depends_on:
       - db
       - redis
