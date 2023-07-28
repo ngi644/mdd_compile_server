@@ -28,7 +28,7 @@ services:
       - redis
 
   compile_worker:
-    cpus: 2
+    cpus: 1
     build:
       context: ./
       dockerfile: ./compile_worker/Dockerfile
