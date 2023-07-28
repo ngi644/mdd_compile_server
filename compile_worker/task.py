@@ -13,8 +13,8 @@ import tarfile
 
 app = Celery("tasks", broker=broker_url, backend=result_backend)
 app.config_from_object("shared.celery_config")
-app.conf.CELERY_ACKS_LATE = True
-app.conf.CELERYD_PREFETCH_MULTIPLIER = 1
+# app.conf.CELERY_ACKS_LATE = True
+# app.conf.CELERYD_PREFETCH_MULTIPLIER = 1
 
 
 def create_tar_archive(zip_data: bytes, task_id: str) -> io.BytesIO:
