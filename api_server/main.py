@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request, UploadFile, File, Depends, HTTPException, Form
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -11,11 +12,13 @@ from urllib.parse import urljoin
 
 models.Base.metadata.create_all(bind=engine)
 
+templates = Jinja2Templates(directory="templates")
+
+
 app = FastAPI()
 
 # CORS設定
 origins = ["*"]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -91,26 +94,6 @@ async def get_task_list(request: Request, db: Session = Depends(get_db)):
     return {"tasks": tasks}
 
 
-_html = f"""
-    <!DOCTYPE html>
-    <html lang="ja">
-        <head>
-            <meta charset="UTF-8">
-            <title>ファイル生成中</title>
-        </head>
-        <body>
-            <h2>ファイル生成中</h2>
-            <p>現在，サーバーでファイルを生成中です．自動的に再度ダウンロードを試みます．</p>
-            <p>しばらくお待ちください．</p>
-            <p>ファイルのダウンロードが開始されない時は，ページをリロードしてください．</p>
-            <script type="text/javascript">
-                setTimeout("location.reload()", 4000);
-            </script>
-        </body>
-    </html>
-    """
-
-
 @app.get("/api/compile/{task_id}/result")
 async def get_result(request: Request, task_id: str, db: Session = Depends(get_db)):
     """ タスクの実行結果を取得する
@@ -119,12 +102,10 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
     Returns: FileResponse: HEXファイル
     """
     task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
+    data = {"title": "コンパイル中", }
     if task_result is None:
-        return HTMLResponse(content=_html, media_type="text/html", status_code=200)
-        #raise HTTPException(status_code=404, detail="Result not found")
-
+        return templates.TemplateResponse("wait_template.html", {"request": request, "data": data})
     if task_result.result is not None:
-
         if task_result.result != b"":
             # 一時的にHEXファイルを保存
             tmp_hex_path = f"/tmp/{task_id}.hex"
@@ -135,25 +116,16 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
             return FileResponse(tmp_hex_path, media_type="application/octet-stream", filename=f"microbitv2.hex", status_code=200)
         else:
             # HEXファイルが空の場合は，エラー内容を返す
-            html = f"""
-            <!DOCTYPE html>
-            <html lang="ja">
-                <head>
-                    <meta charset="UTF-8">
-                    <title>コンパイルエラー</title>
-                </head>
-                <body>
-                    <h2>コンパイルエラー</h2>
-                    <p>コンパイル中にエラーが発生しました．</p>
-                    <p>Traceback:</p>
-                    <pre>{task_result.trace_back}</pre>
-                </body>
-            </html>
-            """
+            data["title"] = "コンパイルエラー"
+            data["trace_back"] = task_result.trace_back
+            return templates.TemplateResponse("error_template.html", {"request": request, "data": data})
             return HTMLResponse(content=html, media_type="text/html", status_code=200)
     else:
         # タスクが完了していない場合は、再度，リロードするようにメッセージを返すHTTPレスポンスを返す
+        return templates.TemplateResponse("wait_template.html", {"request": request, "data": data})
 
-        return HTMLResponse(content=_html, media_type="text/html", status_code=200)
 
-
+@app.get("/", response_class=HTMLResponse)
+async def read_item(request: Request):
+    data = {"title": "mdd compiler", "body": "MDD compiler for micro:bit v2"}
+    return templates.TemplateResponse("index_template.html", {"request": request, "data": data})

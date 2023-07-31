@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ data.title }}</title>
+    <link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
+    <link href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css" rel="stylesheet" />
+    <style>
+        html, body, pre, code, kbd, samp {
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        body {
+            background-color: white;
+            padding: 2em;
+        }
+    </style>
+    <script type="text/javascript">
+        //setTimeout("location.reload()", 3000);
+    </script>
+</head>
+<body>
+    <div class="nes-container with-title">
+        <p class="title">Compile error..</p>
+        <p>{{ data.body }}</p>
+        <h3>Traceback:</h3>
+        <pre>{{ data.trace_back }}</pre>
+    </div>
+</body>
+</html>
+
