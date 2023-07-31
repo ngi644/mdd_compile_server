@@ -52,6 +52,16 @@ curl -X 'POST' \
   -F 'file=@main.zip;type=application/zip'
 ```
 
+### タスクの詳細の取得
+
+`/api/compile/{task_id}/info`にGETリクエストを送信することで，コンパイルタスクの詳細を取得することができます。
+
+```bash
+curl -X 'GET' \
+  'http://localhost:8000/api/compile/{task_id}/info' \
+  -H 'accept: text/html'
+```
+
 ### コンパイル結果の取得
 
 `/api/compile/{task_id}/result`にGETリクエストを送信することで，コンパイル結果を取得することができます。

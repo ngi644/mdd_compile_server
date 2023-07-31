@@ -5,23 +5,25 @@
     <title>{{ data.title }}</title>
     <link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
     <link href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css" rel="stylesheet" />
-    <style>
-        html, body, pre, code, kbd, samp {
-            font-family: 'Press Start 2P', cursive;
-        }
-
-        body {
-            background-color: white;
-            padding: 2em;
-        }
-    </style>
+    <link href="/static/styles.css" rel="stylesheet" />
     <script type="text/javascript">
-        //setTimeout("location.reload()", 3000);
+
+        window.onload = function() {
+            let counter = 1;
+            const dotElement = document.getElementById("dot");
+
+            setInterval(() => {
+                dotElement.innerText = '.'.repeat(counter);
+                counter = counter === 5 ? 1 : counter + 1;
+            }, 600);
+
+            setTimeout("location.reload()", 3000);
+        }
     </script>
 </head>
 <body>
     <div class="nes-container with-title">
-        <p class="title">Generating file..</p>
+        <p class="title">Generating file<span id="dot">.</span></p>
         <section class="message-list">
             <section class="message">
                 <div class="nes-balloon from-left">
