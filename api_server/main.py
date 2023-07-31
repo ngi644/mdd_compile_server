@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, UploadFile, File, Depends, HTTPException, Form
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -16,6 +17,7 @@ templates = Jinja2Templates(directory="templates")
 
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS設定
 origins = ["*"]
@@ -94,6 +96,27 @@ async def get_task_list(request: Request, db: Session = Depends(get_db)):
     return {"tasks": tasks}
 
 
+@app.get("/api/compile/{task_id}/info")
+async def get_info(request: Request, task_id: str, db: Session = Depends(get_db)):
+    """ タスクの詳細を取得する
+     
+    Args: task_id (str): タスクID
+    Returns: HTMLResponse: タスクの詳細を表示するHTML
+    """
+    task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
+    if task_result is None:
+        raise HTTPException(status_code=404, detail="Result not found")
+    data = {"task_id": task_result.task_id,
+            "user_id": task_result.user_id,
+            "created_at": task_result.created_at,
+            "modified_at": task_result.modified_at,
+            "result_url": _get_result_url(request.url._url, task_result.task_id),
+            "time_to_compile": _get_time_to_compile(task_result.modified_at, task_result.created_at),
+            "trace_back": task_result.trace_back,
+            }
+    return templates.TemplateResponse("task_info_template.html", {"request": request, "data": data})
+
+
 @app.get("/api/compile/{task_id}/result")
 async def get_result(request: Request, task_id: str, db: Session = Depends(get_db)):
     """ タスクの実行結果を取得する
@@ -119,7 +142,6 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
             data["title"] = "コンパイルエラー"
             data["trace_back"] = task_result.trace_back
             return templates.TemplateResponse("error_template.html", {"request": request, "data": data})
-            return HTMLResponse(content=html, media_type="text/html", status_code=200)
     else:
         # タスクが完了していない場合は、再度，リロードするようにメッセージを返すHTTPレスポンスを返す
         return templates.TemplateResponse("wait_template.html", {"request": request, "data": data})
@@ -127,5 +149,8 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
 
 @app.get("/", response_class=HTMLResponse)
 async def read_item(request: Request):
+    """
+    ルートディレクトリにアクセスしたときに表示するページ
+    """
     data = {"title": "mdd compiler", "body": "MDD compiler for micro:bit v2"}
     return templates.TemplateResponse("index_template.html", {"request": request, "data": data})
