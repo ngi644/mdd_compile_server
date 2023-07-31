@@ -16,6 +16,8 @@ COPY shared /app/shared
 COPY api_server/__init__.py .
 COPY api_server/main.py .
 COPY api_server/celery_app.py .
+COPY api_server/static /app/static
+COPY api_server/templates /app/templates
 
 
 # UvicornでFastAPIアプリケーションを実行
