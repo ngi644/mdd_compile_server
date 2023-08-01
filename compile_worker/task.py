@@ -91,11 +91,16 @@ def compile_codal(self, source_code: str, user_id: str = None):
 
     # コンパイル結果（HEXファイル）を取得
     try:
-        hex_file_generator, stats = container.get_archive(f"/tmp/{self.request.id}.hex")
-        # ジェネレータからバイト列を取得
-        hex_file_data = b"".join(hex_file_generator)
-        # コンパイル結果を DB に保存
-        save_result(self.request.id, trace_back, hex_file_data)
+        hex_file_stream, stats = container.get_archive(f"/tmp/{self.request.id}.hex")
+
+        byte_stream = io.BytesIO()
+        for chunk in hex_file_stream:
+            byte_stream.write(chunk)
+        byte_stream.seek(0) 
+        with tarfile.open(fileobj=byte_stream) as tar_file:
+            hex_file = tar_file.extractfile(f'{self.request.id}.hex')
+            # コンパイル結果を DB に保存
+            save_result(self.request.id, trace_back, hex_file.read())
     except docker.errors.APIError:
         # コンパイルに失敗した場合、HEXファイルが存在しないため、APIError が発生します
         # その場合は、空のバイト列を返します
