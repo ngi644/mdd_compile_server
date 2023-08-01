@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, UploadFile, File, Depends, HTTPException, Form
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +9,7 @@ from shared.database import SessionLocal, engine
 from shared import models
 from celery_app import app as celery_app
 import base64
+from io import BytesIO
 from urllib.parse import urljoin
 
 models.Base.metadata.create_all(bind=engine)
@@ -122,7 +123,7 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
     """ タスクの実行結果を取得する
      
     Args: task_id (str): タスクID
-    Returns: FileResponse: HEXファイル
+    Returns: StreamingResponse: HEXファイル
     """
     task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
     data = {"title": "コンパイル中", }
@@ -130,13 +131,12 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
         return templates.TemplateResponse("wait_template.html", {"request": request, "data": data})
     if task_result.result is not None:
         if task_result.result != b"":
-            # 一時的にHEXファイルを保存
-            tmp_hex_path = f"/tmp/{task_id}.hex"
-            with open(tmp_hex_path, "wb") as f:
-                f.write(task_result.result)
-
-            # FileResponseを使ってHEXファイルをクライアントに提供
-            return FileResponse(tmp_hex_path, media_type="application/octet-stream", filename=f"microbitv2.hex", status_code=200)
+            result_bin = BytesIO(task_result.result)
+            result_bin.seek(0)
+            # StreamingResponseを使ってHEXファイルをクライアントに提供
+            return StreamingResponse(result_bin, media_type="application/octet-stream", 
+                                     headers={'Content-Disposition': 'attachment; filename="microbitv2.hex"' },
+                                     status_code=200)
         else:
             # HEXファイルが空の場合は，エラー内容を返す
             data["title"] = "コンパイルエラー"
