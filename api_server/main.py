@@ -97,6 +97,27 @@ async def get_task_list(request: Request, db: Session = Depends(get_db)):
     return {"tasks": tasks}
 
 
+@app.get("/api/compile/list/range/{start}/{end}")
+async def get_task_list(request: Request, start:str, end:str ,db: Session = Depends(get_db)):
+    """
+    タスクの一覧を期間で取得する
+    startおよびendは，YYYY-MM-DDの形式で指定する
+    """
+    base_url = request.url._url
+    # task_idとuser_idとコンパイル時間，結果取得用のURLを取得する
+    
+    task_results = db.query(models.TaskResult.task_id,
+                            models.TaskResult.user_id,
+                            models.TaskResult.created_at,
+                            models.TaskResult.modified_at).filter(models.TaskResult.created_at >= start).filter(models.TaskResult.created_at <= end).order_by(models.TaskResult.created_at.desc()).all()
+    tasks = [dict(task_id=task_result[0], user_id=task_result[1], 
+                  result_url=_get_result_url(base_url, task_result[0]),
+                  created_at=task_result[2], modified_at=task_result[3],
+                  time_to_compile=_get_time_to_compile(task_result[3], task_result[2])
+                  ) for task_result in task_results]
+    return {"tasks": tasks}
+
+
 @app.get("/api/compile/{task_id}/info")
 async def get_info(request: Request, task_id: str, db: Session = Depends(get_db)):
     """ タスクの詳細を取得する
@@ -145,6 +166,24 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
     else:
         # タスクが完了していない場合は、再度，リロードするようにメッセージを返すHTTPレスポンスを返す
         return templates.TemplateResponse("wait_template.html", {"request": request, "data": data})
+
+
+@app.get("/api/compile/{task_id}/webusb")
+async def get_result_webusb(request: Request, task_id: str, db: Session = Depends(get_db)):
+    """ タスクの実行結果をWebUSBdeviceに送信する
+     
+    Args: task_id (str): タスクID
+    Returns: WebResponse: HEXファイル送信用のHTML
+    """
+    task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
+    if task_result is None:
+        raise HTTPException(status_code=404, detail="Result not found")
+    
+    data = {"title": "Web USB転送", 
+            "file_url": _get_result_url(request.url._url, task_result.task_id),
+            }
+    
+    return templates.TemplateResponse("webusb_template.html", {"request": request, "data": data})
 
 
 @app.get("/", response_class=HTMLResponse)
