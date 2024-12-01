@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ data.title }}</title>
+    <link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
+    <link href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css" rel="stylesheet" />
+    <link href="/static/styles.css" rel="stylesheet" />
+</head>
+<body>
+    <div class="nes-container with-title">
+        <p class="title">Generating file<span id="dot">.</span></p>
+        <section class="message-list">
+            <section class="message">
+                <div class="nes-balloon from-left">
+                          
+                </div>
+            </section>
+        </section>
+        <button id="connect" type="button" class="nes-btn is-primary">Connect to USB device</button>
+    </div>
+
+    <script>
+        document.getElementById('connect').addEventListener('click', async () => {
+            try {
+                const device = await navigator.usb.requestDevice({ filters: [{
+                                    vendorId: 0x0d28,//3368,
+                                    productId: 516
+                                }] });
+                await device.open();
+                await device.selectConfiguration(1);
+                await device.claimInterface(device.configuration.interfaces[0].interfaceNumber);
+    
+                const response = await fetch('{{ data.file_url }}');
+                const data = await response.arrayBuffer();
+                console.log(data);
+    
+                const dataToSend = new Uint8Array(data);
+                const result = await device.transferOut(2, dataToSend);
+
+    
+                console.log('Data sent to USB device', result);
+    
+                await device.close();
+            } catch (error) {
+                console.error('Failed to connect to USB device:: ', error);
+            }
+        });
+    </script>
+    
+
+
+</body>
+</html>
+
