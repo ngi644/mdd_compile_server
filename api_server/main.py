@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, UploadFile, File, Depends, HTTPException, Form
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,6 +58,45 @@ async def compile_codal(request: Request, file: UploadFile = File(...), user_id:
     source_code = await file.read()
     source_code_str = base64.b64encode(source_code).decode('utf-8')
     task = celery_app.send_task("compile_worker.tasks.compile_codal", args=[source_code_str, user_id])
+    result_url = urljoin(request.url._url, f"/api/compile/{task.id}/result")
+    return {"task_id": task.id,
+             "url": _remove_protocol(result_url)}
+
+
+# PlatformIO 対応ボード一覧
+SUPPORTED_BOARDS = [
+    "m5stack-atoms3",
+    "m5stack-atoms3-lite",
+    "m5stack-core2",
+    "m5stack-cores3",
+    "m5stick-c-plus2"
+]
+
+
+@app.get("/api/compile/platformio/boards")
+async def get_supported_boards():
+    """ サポートされているボードの一覧を取得する
+
+    Returns: dict: サポートされているボードの一覧
+    """
+    return {"boards": SUPPORTED_BOARDS}
+
+
+@app.post("/api/compile/platformio")
+async def compile_platformio(request: Request, file: UploadFile = File(...), board: str = Form("m5stack-atoms3"), user_id: str = Form(None)):
+    """ PlatformIO でコンパイルする
+
+    Args: file (UploadFile): アップロードされたファイル (ZIP)
+        board (str): ターゲットボード名
+        user_id (Optional[str]): ユーザーID
+    Returns: dict: タスクIDと結果取得用のURL
+    """
+    if board not in SUPPORTED_BOARDS:
+        raise HTTPException(status_code=400, detail=f"Unsupported board: {board}. Supported boards: {SUPPORTED_BOARDS}")
+
+    source_code = await file.read()
+    source_code_str = base64.b64encode(source_code).decode('utf-8')
+    task = celery_app.send_task("compile_worker.tasks.compile_platformio", args=[source_code_str, board, user_id])
     result_url = urljoin(request.url._url, f"/api/compile/{task.id}/result")
     return {"task_id": task.id,
              "url": _remove_protocol(result_url)}
@@ -171,19 +210,83 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
 @app.get("/api/compile/{task_id}/webusb")
 async def get_result_webusb(request: Request, task_id: str, db: Session = Depends(get_db)):
     """ タスクの実行結果をWebUSBdeviceに送信する
-     
+
     Args: task_id (str): タスクID
     Returns: WebResponse: HEXファイル送信用のHTML
     """
     task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
     if task_result is None:
         raise HTTPException(status_code=404, detail="Result not found")
-    
-    data = {"title": "Web USB転送", 
+
+    data = {"title": "Web USB転送",
             "file_url": _get_result_url(request.url._url, task_result.task_id),
             }
-    
+
     return templates.TemplateResponse("webusb_template.html", {"request": request, "data": data})
+
+
+@app.get("/api/compile/{task_id}/webserial")
+async def get_result_webserial(request: Request, task_id: str, board: str = "m5stack-atoms3", db: Session = Depends(get_db)):
+    """ タスクの実行結果をWebSerial経由でESP32デバイスに書き込む
+
+    Args: task_id (str): タスクID
+        board (str): ターゲットボード名
+    Returns: HTMLResponse: ESP Web Tools書き込みページ
+    """
+    task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
+    if task_result is None:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    base_url = request.url._url.rsplit('/', 1)[0]
+    data = {
+        "title": "WebSerial 書き込み",
+        "task_id": task_id,
+        "board": board,
+        "file_url": _get_result_url(request.url._url, task_result.task_id),
+        "manifest_url": f"{base_url}/{task_id}/manifest.json?board={board}",
+    }
+
+    return templates.TemplateResponse("webserial_template.html", {"request": request, "data": data})
+
+
+@app.get("/api/compile/{task_id}/manifest.json")
+async def get_webserial_manifest(request: Request, task_id: str, board: str = "m5stack-atoms3", db: Session = Depends(get_db)):
+    """ ESP Web Tools用のマニフェストファイルを生成する
+
+    Args: task_id (str): タスクID
+        board (str): ターゲットボード名
+    Returns: JSONResponse: マニフェストJSON
+    """
+    task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
+    if task_result is None:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    # ボード名から表示名を取得
+    board_names = {
+        "m5stack-atoms3": "M5AtomS3",
+        "m5stack-atoms3-lite": "M5AtomS3 Lite",
+        "m5stack-core2": "M5Stack Core2",
+        "m5stack-cores3": "M5Stack CoreS3",
+        "m5stick-c-plus2": "M5StickC Plus2",
+    }
+    board_display_name = board_names.get(board, board)
+
+    result_url = _get_result_url(request.url._url, task_result.task_id)
+
+    manifest = {
+        "name": f"MDD Firmware ({board_display_name})",
+        "version": "1.0.0",
+        "builds": [
+            {
+                "chipFamily": "ESP32-S3" if "s3" in board.lower() else "ESP32",
+                "parts": [
+                    {"path": result_url, "offset": 0}
+                ]
+            }
+        ]
+    }
+
+    return JSONResponse(content=manifest)
 
 
 @app.get("/", response_class=HTMLResponse)

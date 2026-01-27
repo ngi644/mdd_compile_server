@@ -39,6 +39,7 @@ services:
       - db
       - redis
       - codal_env
+      - platformio_env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 
@@ -50,6 +51,12 @@ services:
     restart: always
     build:
       context: ./codal_env
+    command: ["/bin/bash", "-c", "tail -f /dev/null"]
+
+  platformio_env:
+    restart: always
+    build:
+      context: ./platformio_env
     command: ["/bin/bash", "-c", "tail -f /dev/null"]
 
   redis:

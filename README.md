@@ -1,6 +1,12 @@
 # MDD コンパイルサーバー
 MDD コンパイルサーバーは、MDDコンパイラにより生成されたプログラミングコードを実行形式にするためのサーバーです。
-現在は，CODALに対応しています。
+
+## 対応ターゲット
+
+| ターゲット | デバイス | 出力形式 |
+|-----------|---------|---------|
+| CODAL | micro:bit v2 | .hex |
+| PlatformIO | M5Stack系 (AtomS3, Core2, CoreS3等) | .bin |
 
 ## セットアップ，起動
 
@@ -40,7 +46,7 @@ docsページでは，APIの実行も行うことができます。
 `/api/compile/{target}`にPOSTリクエストを送信することで，コンパイルを要求することができます。
 `target`には，コンパイル対象のプログラミング言語を指定します。
 
-#### CODAL
+#### CODAL (micro:bit v2)
 
 POSTを送信する際には，`file`パラメータにコンパイル対象のZipファイルを指定します。Zipファイルは，`main.cpp`をルートディレクトリに含む必要があります。 `user_id`パラメータには，コンパイル対象のユーザーIDを指定します。
 
@@ -50,6 +56,55 @@ curl -X 'POST' \
   -H 'accept: application/json' \
   -H 'Content-Type: multipart/form-data' \
   -F 'file=@main.zip;type=application/zip'
+```
+
+#### PlatformIO (M5Stack系)
+
+M5Stack系デバイス向けのコンパイルを行います。`file`パラメータにコンパイル対象のZipファイル（`main.cpp`を含む）を指定します。`board`パラメータでターゲットボードを指定します。
+
+**対応ボード:**
+
+| ボード名 | デバイス |
+|---------|---------|
+| `m5stack-atoms3` | M5AtomS3 |
+| `m5stack-atoms3-lite` | M5AtomS3 Lite |
+| `m5stack-core2` | M5Stack Core2 |
+| `m5stack-cores3` | M5Stack CoreS3 |
+| `m5stick-c-plus2` | M5StickC Plus2 |
+
+**サポートボード一覧の取得:**
+
+```bash
+curl -X 'GET' \
+  'http://localhost:8000/api/compile/platformio/boards' \
+  -H 'accept: application/json'
+```
+
+**コンパイルリクエスト:**
+
+```bash
+curl -X 'POST' \
+  'http://localhost:8000/api/compile/platformio' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: multipart/form-data' \
+  -F 'file=@main.zip;type=application/zip' \
+  -F 'board=m5stack-atoms3' \
+  -F 'user_id=hoge'
+```
+
+**サンプルコード (main.cpp):**
+
+```cpp
+#include <M5Unified.h>
+
+void setup() {
+    M5.begin();
+    M5.Display.println("Hello, M5Stack!");
+}
+
+void loop() {
+    M5.update();
+}
 ```
 
 ### タスクの詳細の取得
@@ -71,6 +126,25 @@ curl -X 'GET' \
   'http://localhost:8000/api/compile/{task_id}/result' \
   -H 'accept: application/json'
 ```
+
+### WebSerial書き込み (M5Stack系)
+
+M5Stack系デバイス（ESP32）向けに、ブラウザから直接ファームウェアを書き込むことができます。ESP Web Toolsを使用しています。
+
+**対応ブラウザ:** Chrome, Edge（WebSerial対応ブラウザ）
+
+`/api/compile/{task_id}/webserial`にアクセスすると、WebSerial書き込みページが表示されます。
+
+```
+http://localhost:8000/api/compile/{task_id}/webserial?board=m5stack-atoms3
+```
+
+**使い方:**
+
+1. 上記URLにブラウザでアクセス
+2. M5StackデバイスをUSBで接続
+3. 「デバイスに書き込む」ボタンをクリック
+4. シリアルポートを選択して書き込み開始
 
 ### コンパイルタスクの一覧の取得
 

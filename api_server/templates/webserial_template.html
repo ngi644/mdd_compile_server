@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ data.title }}</title>
+    <link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
+    <link href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css" rel="stylesheet" />
+    <link href="/static/styles.css" rel="stylesheet" />
+    <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+    <style>
+        .install-container {
+            margin: 20px 0;
+            text-align: center;
+        }
+        esp-web-install-button {
+            --esp-tools-button-color: #209cee;
+            --esp-tools-button-text-color: #fff;
+        }
+        .board-info {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+        }
+        .manual-download {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px dashed #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="nes-container with-title">
+        <p class="title">{{ data.title }}</p>
+
+        <div class="board-info">
+            <p><strong>Board:</strong> {{ data.board }}</p>
+            <p><strong>Task ID:</strong> {{ data.task_id }}</p>
+        </div>
+
+        <section class="message-list">
+            <section class="message">
+                <div class="nes-balloon from-left">
+                    <p>ESP Web Toolsを使用してブラウザから直接書き込みます。</p>
+                    <p>Chrome または Edge ブラウザが必要です。</p>
+                </div>
+            </section>
+        </section>
+
+        <div class="install-container">
+            <esp-web-install-button manifest="{{ data.manifest_url }}">
+                <button slot="activate" class="nes-btn is-primary">デバイスに書き込む</button>
+                <span slot="unsupported">
+                    <p class="nes-text is-error">お使いのブラウザはWebSerialに対応していません。</p>
+                    <p>Chrome または Edge をお使いください。</p>
+                </span>
+                <span slot="not-allowed">
+                    <p class="nes-text is-warning">WebSerialへのアクセスが許可されていません。</p>
+                </span>
+            </esp-web-install-button>
+        </div>
+
+        <div class="manual-download">
+            <p>手動でダウンロードする場合:</p>
+            <a href="{{ data.file_url }}" class="nes-btn">firmware.bin をダウンロード</a>
+        </div>
+    </div>
+</body>
+</html>

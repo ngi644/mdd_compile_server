@@ -111,3 +111,57 @@ def compile_codal(self, source_code: str, user_id: str = None):
     container.remove()
 
     return compile_result.exit_code
+
+
+@app.task(bind=True, name="compile_worker.tasks.compile_platformio")
+def compile_platformio(self, source_code: str, board: str = "m5stack-atoms3", user_id: str = None):
+    """ PlatformIO でソースコードをコンパイルして BIN ファイルを生成する
+
+    Args:
+        source_code (str): Base64 エンコードされた ZIP ファイル
+        board (str): ターゲットボード名 (例: m5stack-atoms3)
+        user_id (str): ユーザーID
+    """
+    create_result(self.request.id, user_id)
+    docker_client = docker.from_env()
+    # コンテナを作成
+    container = docker_client.containers.run("mdd_compile_server-platformio_env", detach=True, name=f"platformio_{self.request.id}")
+    # 環境変数を設定
+    source_code_bytes = base64.b64decode(source_code.encode('utf-8'))
+    tar_buffer = create_tar_archive(source_code_bytes, self.request.id)
+
+    # ファイルをコンテナにコピー
+    container.put_archive('/workspace', tar_buffer)
+
+    env = {
+        "ZIP_FILE": f"/workspace/{self.request.id}.zip",
+        "OUTPUT_PATH": f"/tmp/{self.request.id}.bin",
+        "BOARD": board
+    }
+
+    # シェルスクリプトを実行
+    compile_result = container.exec_run("bash /compile_platformio.sh", environment=env, workdir="/workspace")
+    trace_back = compile_result.output.decode('utf-8')
+
+    # コンパイル結果（BINファイル）を取得
+    try:
+        bin_file_stream, stats = container.get_archive(f"/tmp/{self.request.id}.bin")
+
+        byte_stream = io.BytesIO()
+        for chunk in bin_file_stream:
+            byte_stream.write(chunk)
+        byte_stream.seek(0)
+        with tarfile.open(fileobj=byte_stream) as tar_file:
+            bin_file = tar_file.extractfile(f'{self.request.id}.bin')
+            # コンパイル結果を DB に保存
+            save_result(self.request.id, trace_back, bin_file.read())
+    except docker.errors.APIError:
+        # コンパイルに失敗した場合、BINファイルが存在しないため、APIError が発生します
+        # その場合は、空のバイト列を返します
+        save_result(self.request.id, trace_back, b"")
+
+    # コンテナを削除
+    container.stop(timeout=0)
+    container.remove()
+
+    return compile_result.exit_code
