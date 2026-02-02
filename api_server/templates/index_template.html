@@ -6,11 +6,114 @@
     <link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet"/>
     <link href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css" rel="stylesheet" />
     <link href="/static/styles.css" rel="stylesheet" />
+    <style>
+        .target-list {
+            margin: 20px 0;
+        }
+        .target-item {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f8f8;
+        }
+        .target-icon {
+            margin-right: 15px;
+            font-size: 24px;
+        }
+        .target-info h3 {
+            margin: 0 0 5px 0;
+            font-size: 14px;
+        }
+        .target-info p {
+            margin: 0;
+            font-size: 11px;
+            color: #666;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        .boards-section {
+            margin-top: 20px;
+        }
+        .board-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .board-badge {
+            font-size: 10px;
+            padding: 4px 8px;
+        }
+        .section-title {
+            font-size: 12px;
+            margin: 20px 0 10px 0;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 5px;
+        }
+    </style>
 </head>
 <body>
     <div class="nes-container with-title">
         <p class="title">{{ data.title }}</p>
-        <p>{{ data.body }}</p>
+
+        <section class="message-list">
+            <section class="message">
+                <div class="nes-balloon from-left">
+                    <p>MDDで生成されたコードをコンパイルし、デバイスに書き込むためのサーバーです。</p>
+                </div>
+            </section>
+        </section>
+
+        <h3 class="section-title">対応ターゲット</h3>
+        <div class="target-list">
+            <div class="target-item nes-container is-rounded">
+                <div class="target-icon"><i class="nes-icon is-medium star"></i></div>
+                <div class="target-info">
+                    <h3>micro:bit v2</h3>
+                    <p>CODAL / WebUSB (DAPjs) / .hex</p>
+                </div>
+            </div>
+            <div class="target-item nes-container is-rounded">
+                <div class="target-icon"><i class="nes-icon is-medium heart"></i></div>
+                <div class="target-info">
+                    <h3>M5Stack Series</h3>
+                    <p>PlatformIO / WebSerial (ESP Web Tools) / .bin</p>
+                </div>
+            </div>
+        </div>
+
+        <h3 class="section-title">M5Stack 対応ボード</h3>
+        <div class="board-list" id="board-list">
+            <span class="nes-badge"><span class="is-primary board-badge">読み込み中...</span></span>
+        </div>
+
+        <h3 class="section-title">リンク</h3>
+        <div class="button-group">
+            <a href="/docs" class="nes-btn is-primary">API ドキュメント</a>
+            <a href="/redoc" class="nes-btn">ReDoc</a>
+        </div>
     </div>
+
+    <script>
+        // ボード一覧を取得して表示
+        fetch('/api/compile/platformio/boards')
+            .then(response => response.json())
+            .then(data => {
+                const boardList = document.getElementById('board-list');
+                boardList.innerHTML = data.boards.map(board =>
+                    `<span class="nes-badge"><span class="is-dark board-badge">${board}</span></span>`
+                ).join('');
+            })
+            .catch(error => {
+                console.error('Error fetching boards:', error);
+                document.getElementById('board-list').innerHTML =
+                    '<span class="nes-badge"><span class="is-error board-badge">取得エラー</span></span>';
+            });
+    </script>
 </body>
 </html>
