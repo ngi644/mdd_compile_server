@@ -467,5 +467,5 @@ async def read_item(request: Request):
     """
     ルートディレクトリにアクセスしたときに表示するページ
     """
-    data = {"title": "mdd compiler", "body": "MDD compiler for micro:bit v2"}
+    data = {"title": "MDD Compile Server"}
     return templates.TemplateResponse("index_template.html", {"request": request, "data": data})
