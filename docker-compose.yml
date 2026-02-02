@@ -39,6 +39,7 @@ services:
       - db
       - redis
       - codal_env
+      - platformio_env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 
@@ -52,6 +53,12 @@ services:
       context: ./codal_env
     command: ["/bin/bash", "-c", "tail -f /dev/null"]
 
+  platformio_env:
+    restart: always
+    build:
+      context: ./platformio_env
+    command: ["/bin/bash", "-c", "tail -f /dev/null"]
+
   redis:
     image: "redis:latest"
     restart: always
@@ -59,7 +66,7 @@ services:
       - "6379:6379"
 
   db:
-    image: "postgres:latest"
+    image: "postgres:16"
     restart: always
     environment:
       POSTGRES_USER: user

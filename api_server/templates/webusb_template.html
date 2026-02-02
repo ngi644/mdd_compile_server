@@ -6,50 +6,213 @@
     <link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
     <link href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css" rel="stylesheet" />
     <link href="/static/styles.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/dapjs@2.3.0/dist/dap.umd.js"></script>
+    <style>
+        #status {
+            margin: 20px 0;
+            padding: 10px;
+            min-height: 60px;
+        }
+        .progress-container {
+            margin: 20px 0;
+            display: none;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background-color: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #92cc41;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .success { color: #92cc41; }
+        .error { color: #e76e55; }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+            align-items: center;
+        }
+        .instructions {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f8f8;
+            border: 2px solid #ccc;
+        }
+    </style>
 </head>
 <body>
     <div class="nes-container with-title">
-        <p class="title">Generating file<span id="dot">.</span></p>
+        <p class="title">micro:bit v2 書き込み</p>
         <section class="message-list">
             <section class="message">
                 <div class="nes-balloon from-left">
-                          
+                    <p>micro:bit v2 にプログラムを書き込みます。</p>
                 </div>
             </section>
         </section>
-        <button id="connect" type="button" class="nes-btn is-primary">Connect to USB device</button>
+
+        <div id="status" class="nes-container">
+            <p id="status-text">準備完了</p>
+        </div>
+
+        <div class="progress-container" id="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <p id="progress-text">0%</p>
+        </div>
+
+        <div class="button-group">
+            <button id="flash-btn" type="button" class="nes-btn is-primary">WebUSBで書き込む</button>
+            <span>または</span>
+            <a href="{{ data.file_url }}" class="nes-btn is-success" download="microbit.hex" id="download-btn">HEXをダウンロード</a>
+        </div>
+
+        <div class="instructions" id="instructions" style="display: none;">
+            <p><strong>手順:</strong></p>
+            <ol>
+                <li>micro:bit をUSBケーブルで接続</li>
+                <li>「WebUSBで書き込む」をクリック</li>
+                <li>ポップアップでmicro:bitを選択</li>
+                <li>自動的に書き込みが開始されます</li>
+            </ol>
+            <p><small>※ うまくいかない場合は「HEXをダウンロード」でファイルを保存し、MICROBITドライブに手動でコピーしてください。</small></p>
+        </div>
     </div>
 
     <script>
-        document.getElementById('connect').addEventListener('click', async () => {
-            try {
-                const device = await navigator.usb.requestDevice({ filters: [{
-                                    vendorId: 0x0d28,//3368,
-                                    productId: 516
-                                }] });
-                await device.open();
-                await device.selectConfiguration(1);
-                await device.claimInterface(device.configuration.interfaces[0].interfaceNumber);
-    
-                const response = await fetch('{{ data.file_url }}');
-                const data = await response.arrayBuffer();
-                console.log(data);
-    
-                const dataToSend = new Uint8Array(data);
-                const result = await device.transferOut(2, dataToSend);
+        const statusText = document.getElementById('status-text');
+        const progressContainer = document.getElementById('progress-container');
+        const progressFill = document.getElementById('progress-fill');
+        const progressTextEl = document.getElementById('progress-text');
+        const instructionsDiv = document.getElementById('instructions');
 
-    
-                console.log('Data sent to USB device', result);
-    
-                await device.close();
+        function setStatus(message, type = '') {
+            statusText.textContent = message;
+            statusText.className = type;
+        }
+
+        function setProgress(percent) {
+            progressContainer.style.display = 'block';
+            progressFill.style.width = percent + '%';
+            progressTextEl.textContent = Math.round(percent) + '%';
+        }
+
+        function hideProgress() {
+            progressContainer.style.display = 'none';
+        }
+
+        // WebUSBが利用可能かチェック
+        const hasWebUSB = 'usb' in navigator;
+
+        if (!hasWebUSB) {
+            instructionsDiv.style.display = 'block';
+            instructionsDiv.innerHTML = `
+                <p><strong>書き込み手順:</strong></p>
+                <ol>
+                    <li>「HEXをダウンロード」をクリックしてファイルを保存</li>
+                    <li>micro:bit をUSBケーブルで接続</li>
+                    <li>エクスプローラー/Finderで「MICROBIT」ドライブを開く</li>
+                    <li>ダウンロードしたHEXファイルをMICROBITドライブにドラッグ＆ドロップ</li>
+                </ol>
+                <p><small>※ お使いのブラウザはWebUSBをサポートしていません。Chrome/Edgeをご利用ください。</small></p>
+            `;
+            document.getElementById('flash-btn').style.display = 'none';
+        } else {
+            instructionsDiv.style.display = 'block';
+        }
+
+        // DAPjsを使用したWebUSB書き込み
+        async function flashWithDAPjs(hexData) {
+            setStatus('micro:bitを選択してください...');
+
+            // micro:bitデバイスをリクエスト
+            const device = await navigator.usb.requestDevice({
+                filters: [{ vendorId: 0x0d28, productId: 0x0204 }]
+            });
+
+            setProgress(20);
+            setStatus('接続中...');
+
+            // DAPjs トランスポート作成
+            const transport = new DAPjs.WebUSB(device);
+            const target = new DAPjs.DAPLink(transport);
+
+            // 進捗イベント
+            target.on(DAPjs.DAPLink.EVENT_PROGRESS, (progress) => {
+                const percent = 30 + progress * 60;
+                setProgress(percent);
+                console.log('Flash progress:', Math.round(percent) + '%');
+            });
+
+            await target.connect();
+            setProgress(30);
+            setStatus('書き込み中...');
+
+            // HEXファイルをそのままUint8Arrayとして渡す（DAPLinkが内部でパース）
+            const hexBytes = new Uint8Array(hexData);
+            console.log('HEX file size:', hexBytes.length, 'bytes');
+
+            // フラッシュ書き込み
+            await target.flash(hexBytes);
+
+            setProgress(95);
+            setStatus('リセット中...');
+
+            // デバイスをリセット
+            await target.disconnect();
+
+            setProgress(100);
+            setStatus('書き込み完了！ micro:bitが再起動します。', 'success');
+        }
+
+        // 書き込みボタン
+        document.getElementById('flash-btn').addEventListener('click', async () => {
+            try {
+                setStatus('HEXファイルを準備中...');
+                setProgress(10);
+
+                // HEXファイルを取得
+                const response = await fetch('{{ data.file_url }}', { cache: 'no-store' });
+                if (!response.ok) {
+                    throw new Error('HEXファイルの取得に失敗しました');
+                }
+                const hexData = await response.arrayBuffer();
+                console.log('HEX file size:', hexData.byteLength, 'bytes');
+
+                // DAPjsで書き込み
+                await flashWithDAPjs(hexData);
+
             } catch (error) {
-                console.error('Failed to connect to USB device:: ', error);
+                console.error('エラー:', error);
+                hideProgress();
+
+                let errorMessage = error.message;
+                if (error.name === 'NotFoundError') {
+                    errorMessage = 'micro:bitが見つかりません。接続を確認してください。';
+                } else if (error.name === 'SecurityError') {
+                    errorMessage = 'WebUSBのアクセスが拒否されました。';
+                } else if (error.name === 'NotAllowedError') {
+                    errorMessage = 'デバイスの選択がキャンセルされました。';
+                    setStatus(errorMessage, '');
+                    return;
+                }
+                setStatus('エラー: ' + errorMessage, 'error');
             }
         });
-    </script>
-    
 
+        // ダウンロードボタン
+        document.getElementById('download-btn').addEventListener('click', () => {
+            setStatus('ダウンロード開始... MICROBITドライブにコピーしてください。', 'success');
+        });
+    </script>
 
 </body>
 </html>
-
