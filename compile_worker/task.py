@@ -135,7 +135,7 @@ def compile_platformio(self, source_code: str, board: str = "m5stack-atoms3", us
 
     env = {
         "ZIP_FILE": f"/workspace/{self.request.id}.zip",
-        "OUTPUT_PATH": f"/tmp/{self.request.id}.bin",
+        "OUTPUT_PATH": f"/tmp/{self.request.id}_output.zip",
         "BOARD": board
     }
 
@@ -143,18 +143,18 @@ def compile_platformio(self, source_code: str, board: str = "m5stack-atoms3", us
     compile_result = container.exec_run("bash /compile_platformio.sh", environment=env, workdir="/workspace")
     trace_back = compile_result.output.decode('utf-8')
 
-    # コンパイル結果（BINファイル）を取得
+    # コンパイル結果（ZIPファイル - firmware.bin, bootloader.bin, partitions.bin含む）を取得
     try:
-        bin_file_stream, stats = container.get_archive(f"/tmp/{self.request.id}.bin")
+        zip_file_stream, stats = container.get_archive(f"/tmp/{self.request.id}_output.zip")
 
         byte_stream = io.BytesIO()
-        for chunk in bin_file_stream:
+        for chunk in zip_file_stream:
             byte_stream.write(chunk)
         byte_stream.seek(0)
         with tarfile.open(fileobj=byte_stream) as tar_file:
-            bin_file = tar_file.extractfile(f'{self.request.id}.bin')
-            # コンパイル結果を DB に保存
-            save_result(self.request.id, trace_back, bin_file.read())
+            zip_file = tar_file.extractfile(f'{self.request.id}_output.zip')
+            # コンパイル結果（ZIP）を DB に保存
+            save_result(self.request.id, trace_back, zip_file.read())
     except docker.errors.APIError:
         # コンパイルに失敗した場合、BINファイルが存在しないため、APIError が発生します
         # その場合は、空のバイト列を返します

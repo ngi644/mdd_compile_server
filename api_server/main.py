@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Request, UploadFile, File, Depends, HTTPException, Form
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, JSONResponse
+from fastapi import FastAPI, Request, UploadFile, File, Depends, HTTPException, Form, Query
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +11,7 @@ from celery_app import app as celery_app
 import base64
 from io import BytesIO
 from urllib.parse import urljoin
+import zipfile
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -47,18 +48,48 @@ def _remove_protocol(url: str):
     return url.replace("http://", "//")
 
 
+def _extract_from_zip(zip_data: bytes, filename: str) -> Optional[bytes]:
+    """ ZIPファイルから指定されたファイルを抽出する
+
+    Args:
+        zip_data (bytes): ZIPファイルのバイナリデータ
+        filename (str): 抽出するファイル名
+    Returns:
+        Optional[bytes]: 抽出されたファイルのバイナリデータ、存在しない場合はNone
+    """
+    try:
+        with zipfile.ZipFile(BytesIO(zip_data), 'r') as zf:
+            if filename in zf.namelist():
+                return zf.read(filename)
+    except zipfile.BadZipFile:
+        pass
+    return None
+
+
+def _is_platformio_result(data: bytes) -> bool:
+    """ PlatformIOの結果（ZIP）かどうかを判定する
+
+    Args:
+        data (bytes): バイナリデータ
+    Returns:
+        bool: ZIPファイルの場合True
+    """
+    # ZIPファイルのマジックナンバー: PK (0x50, 0x4B)
+    return data[:2] == b'PK'
+
+
 @app.post("/api/compile/codal")
 async def compile_codal(request: Request, file: UploadFile = File(...), user_id: str = Form(None)):
     """ FastAPI から Celery にタスクを送信する
 
     Args: file (UploadFile): アップロードされたファイル
         user_id (Optional[str]): ユーザーID
-    Returns: dict: タスクIDと結果取得用のURL
+    Returns: dict: タスクIDと結果取得用のURL（WebUSB書き込みページ）
     """
     source_code = await file.read()
     source_code_str = base64.b64encode(source_code).decode('utf-8')
     task = celery_app.send_task("compile_worker.tasks.compile_codal", args=[source_code_str, user_id])
-    result_url = urljoin(request.url._url, f"/api/compile/{task.id}/result")
+    result_url = urljoin(request.url._url, f"/api/compile/{task.id}/webusb")
     return {"task_id": task.id,
              "url": _remove_protocol(result_url)}
 
@@ -83,13 +114,13 @@ async def get_supported_boards():
 
 
 @app.post("/api/compile/platformio")
-async def compile_platformio(request: Request, file: UploadFile = File(...), board: str = Form("m5stack-atoms3"), user_id: str = Form(None)):
+async def compile_platformio(request: Request, file: UploadFile = File(...), board: str = Query("m5stack-atoms3"), user_id: str = Form(None)):
     """ PlatformIO でコンパイルする
 
     Args: file (UploadFile): アップロードされたファイル (ZIP)
         board (str): ターゲットボード名
         user_id (Optional[str]): ユーザーID
-    Returns: dict: タスクIDと結果取得用のURL
+    Returns: dict: タスクIDと結果取得用のURL（WebSerial書き込みページ）
     """
     if board not in SUPPORTED_BOARDS:
         raise HTTPException(status_code=400, detail=f"Unsupported board: {board}. Supported boards: {SUPPORTED_BOARDS}")
@@ -97,7 +128,7 @@ async def compile_platformio(request: Request, file: UploadFile = File(...), boa
     source_code = await file.read()
     source_code_str = base64.b64encode(source_code).decode('utf-8')
     task = celery_app.send_task("compile_worker.tasks.compile_platformio", args=[source_code_str, board, user_id])
-    result_url = urljoin(request.url._url, f"/api/compile/{task.id}/result")
+    result_url = urljoin(request.url._url, f"/api/compile/{task.id}/webserial?board={board}")
     return {"task_id": task.id,
              "url": _remove_protocol(result_url)}
 
@@ -181,9 +212,9 @@ async def get_info(request: Request, task_id: str, db: Session = Depends(get_db)
 @app.get("/api/compile/{task_id}/result")
 async def get_result(request: Request, task_id: str, db: Session = Depends(get_db)):
     """ タスクの実行結果を取得する
-     
+
     Args: task_id (str): タスクID
-    Returns: StreamingResponse: HEXファイル
+    Returns: StreamingResponse: HEX/BINファイル
     """
     task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
     data = {"title": "コンパイル中", }
@@ -193,12 +224,18 @@ async def get_result(request: Request, task_id: str, db: Session = Depends(get_d
         if task_result.result != b"":
             result_bin = BytesIO(task_result.result)
             result_bin.seek(0)
-            # StreamingResponseを使ってHEXファイルをクライアントに提供
-            return StreamingResponse(result_bin, media_type="application/octet-stream", 
-                                     headers={'Content-Disposition': 'attachment; filename="microbitv2.hex"' },
+            # ファイルの種類を判断（HEXファイルは":"で始まるASCIIテキスト）
+            is_hex = task_result.result[:1] == b':'
+            if is_hex:
+                filename = "microbitv2.hex"
+            else:
+                filename = "firmware.bin"
+            # StreamingResponseを使ってファイルをクライアントに提供
+            return StreamingResponse(result_bin, media_type="application/octet-stream",
+                                     headers={'Content-Disposition': f'attachment; filename="{filename}"' },
                                      status_code=200)
         else:
-            # HEXファイルが空の場合は，エラー内容を返す
+            # ファイルが空の場合は，エラー内容を返す
             data["title"] = "コンパイルエラー"
             data["trace_back"] = task_result.trace_back
             return templates.TemplateResponse("error_template.html", {"request": request, "data": data})
@@ -215,8 +252,18 @@ async def get_result_webusb(request: Request, task_id: str, db: Session = Depend
     Returns: WebResponse: HEXファイル送信用のHTML
     """
     task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
+    data = {"title": "コンパイル中"}
+
+    # タスクが存在しない、またはまだ完了していない場合は待機画面を表示
     if task_result is None:
-        raise HTTPException(status_code=404, detail="Result not found")
+        return templates.TemplateResponse("wait_template.html", {"request": request, "data": data})
+    if task_result.result is None:
+        return templates.TemplateResponse("wait_template.html", {"request": request, "data": data})
+    if task_result.result == b"":
+        # コンパイルエラーの場合
+        data["title"] = "コンパイルエラー"
+        data["trace_back"] = task_result.trace_back
+        return templates.TemplateResponse("error_template.html", {"request": request, "data": data})
 
     data = {"title": "Web USB転送",
             "file_url": _get_result_url(request.url._url, task_result.task_id),
@@ -234,19 +281,122 @@ async def get_result_webserial(request: Request, task_id: str, board: str = "m5s
     Returns: HTMLResponse: ESP Web Tools書き込みページ
     """
     task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
-    if task_result is None:
-        raise HTTPException(status_code=404, detail="Result not found")
+    data = {"title": "コンパイル中"}
 
-    base_url = request.url._url.rsplit('/', 1)[0]
+    # タスクが存在しない、またはまだ完了していない場合は待機画面を表示
+    if task_result is None:
+        return templates.TemplateResponse("wait_template.html", {"request": request, "data": data})
+    if task_result.result is None:
+        return templates.TemplateResponse("wait_template.html", {"request": request, "data": data})
+    if task_result.result == b"":
+        # コンパイルエラーの場合
+        data["title"] = "コンパイルエラー"
+        data["trace_back"] = task_result.trace_back
+        return templates.TemplateResponse("error_template.html", {"request": request, "data": data})
+
+    # /webserial を /manifest.json に置き換え
+    manifest_url = urljoin(request.url._url, f"/api/compile/{task_id}/manifest.json?board={board}")
     data = {
         "title": "WebSerial 書き込み",
         "task_id": task_id,
         "board": board,
         "file_url": _get_result_url(request.url._url, task_result.task_id),
-        "manifest_url": f"{base_url}/{task_id}/manifest.json?board={board}",
+        "manifest_url": manifest_url,
     }
 
     return templates.TemplateResponse("webserial_template.html", {"request": request, "data": data})
+
+
+@app.get("/api/compile/{task_id}/firmware.bin")
+async def get_firmware_bin(request: Request, task_id: str, db: Session = Depends(get_db)):
+    """ ESP Web Tools用のファームウェアバイナリを取得する
+
+    Args: task_id (str): タスクID
+    Returns: Response: BINファイル
+    """
+    task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
+    if task_result is None:
+        raise HTTPException(status_code=404, detail="Result not found")
+    if task_result.result is None or task_result.result == b"":
+        raise HTTPException(status_code=404, detail="Firmware not ready")
+
+    # PlatformIOの結果（ZIP）から firmware.bin を抽出
+    if _is_platformio_result(task_result.result):
+        firmware = _extract_from_zip(task_result.result, "firmware.bin")
+        if firmware is None:
+            raise HTTPException(status_code=404, detail="firmware.bin not found in archive")
+        content = firmware
+    else:
+        content = task_result.result
+
+    return Response(
+        content=content,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": 'inline; filename="firmware.bin"',
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
+
+
+@app.get("/api/compile/{task_id}/bootloader.bin")
+async def get_bootloader_bin(request: Request, task_id: str, db: Session = Depends(get_db)):
+    """ ESP Web Tools用のブートローダーバイナリを取得する
+
+    Args: task_id (str): タスクID
+    Returns: Response: BINファイル
+    """
+    task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
+    if task_result is None:
+        raise HTTPException(status_code=404, detail="Result not found")
+    if task_result.result is None or task_result.result == b"":
+        raise HTTPException(status_code=404, detail="Firmware not ready")
+
+    if not _is_platformio_result(task_result.result):
+        raise HTTPException(status_code=404, detail="Not a PlatformIO build")
+
+    bootloader = _extract_from_zip(task_result.result, "bootloader.bin")
+    if bootloader is None:
+        raise HTTPException(status_code=404, detail="bootloader.bin not found in archive")
+
+    return Response(
+        content=bootloader,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": 'inline; filename="bootloader.bin"',
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
+
+
+@app.get("/api/compile/{task_id}/partitions.bin")
+async def get_partitions_bin(request: Request, task_id: str, db: Session = Depends(get_db)):
+    """ ESP Web Tools用のパーティションテーブルを取得する
+
+    Args: task_id (str): タスクID
+    Returns: Response: BINファイル
+    """
+    task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
+    if task_result is None:
+        raise HTTPException(status_code=404, detail="Result not found")
+    if task_result.result is None or task_result.result == b"":
+        raise HTTPException(status_code=404, detail="Firmware not ready")
+
+    if not _is_platformio_result(task_result.result):
+        raise HTTPException(status_code=404, detail="Not a PlatformIO build")
+
+    partitions = _extract_from_zip(task_result.result, "partitions.bin")
+    if partitions is None:
+        raise HTTPException(status_code=404, detail="partitions.bin not found in archive")
+
+    return Response(
+        content=partitions,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": 'inline; filename="partitions.bin"',
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
 
 
 @app.get("/api/compile/{task_id}/manifest.json")
@@ -260,6 +410,8 @@ async def get_webserial_manifest(request: Request, task_id: str, board: str = "m
     task_result = db.query(models.TaskResult).filter(models.TaskResult.task_id == task_id).first()
     if task_result is None:
         raise HTTPException(status_code=404, detail="Result not found")
+    if task_result.result is None or task_result.result == b"":
+        raise HTTPException(status_code=404, detail="Firmware not ready")
 
     # ボード名から表示名を取得
     board_names = {
@@ -271,17 +423,38 @@ async def get_webserial_manifest(request: Request, task_id: str, board: str = "m
     }
     board_display_name = board_names.get(board, board)
 
-    result_url = _get_result_url(request.url._url, task_result.task_id)
+    # チップファミリーとオフセットを決定
+    # ESP32-S3: bootloader=0x0, partitions=0x8000, app=0x10000
+    # ESP32: bootloader=0x1000, partitions=0x8000, app=0x10000
+    is_s3 = "s3" in board.lower()
+    chip_family = "ESP32-S3" if is_s3 else "ESP32"
+    bootloader_offset = 0 if is_s3 else 0x1000
+
+    # ベースURLを生成
+    base_url = urljoin(request.url._url, f"/api/compile/{task_result.task_id}")
+
+    # ZIPからファイルの存在を確認してパーツリストを構築
+    parts = []
+    if _is_platformio_result(task_result.result):
+        # ブートローダーがあれば追加
+        if _extract_from_zip(task_result.result, "bootloader.bin"):
+            parts.append({"path": f"{base_url}/bootloader.bin", "offset": bootloader_offset})
+        # パーティションテーブルがあれば追加
+        if _extract_from_zip(task_result.result, "partitions.bin"):
+            parts.append({"path": f"{base_url}/partitions.bin", "offset": 0x8000})
+        # ファームウェア（必須）
+        parts.append({"path": f"{base_url}/firmware.bin", "offset": 0x10000})
+    else:
+        # 旧形式（単一バイナリ）の場合
+        parts.append({"path": f"{base_url}/firmware.bin", "offset": 0x10000})
 
     manifest = {
         "name": f"MDD Firmware ({board_display_name})",
         "version": "1.0.0",
         "builds": [
             {
-                "chipFamily": "ESP32-S3" if "s3" in board.lower() else "ESP32",
-                "parts": [
-                    {"path": result_url, "offset": 0}
-                ]
+                "chipFamily": chip_family,
+                "parts": parts
             }
         ]
     }

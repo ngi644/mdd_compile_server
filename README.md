@@ -3,10 +3,10 @@ MDD コンパイルサーバーは、MDDコンパイラにより生成された�
 
 ## 対応ターゲット
 
-| ターゲット | デバイス | 出力形式 |
-|-----------|---------|---------|
-| CODAL | micro:bit v2 | .hex |
-| PlatformIO | M5Stack系 (AtomS3, Core2, CoreS3等) | .bin |
+| ターゲット | デバイス | 出力形式 | 書き込み方式 |
+|-----------|---------|---------|-------------|
+| CODAL | micro:bit v2 | .hex | WebUSB |
+| PlatformIO | M5Stack系 (AtomS3, Core2, CoreS3等) | .bin | WebSerial |
 
 ## セットアップ，起動
 
@@ -32,7 +32,7 @@ $ docker-compose build
 
 ### サーバーの起動
 
-```bash 
+```bash
 $ docker-compose up -d
 ```
 
@@ -58,19 +58,28 @@ curl -X 'POST' \
   -F 'file=@main.zip;type=application/zip'
 ```
 
+**レスポンス例:**
+
+```json
+{
+  "task_id": "abc123-...",
+  "url": "//localhost:8000/api/compile/abc123-.../webusb"
+}
+```
+
 #### PlatformIO (M5Stack系)
 
 M5Stack系デバイス向けのコンパイルを行います。`file`パラメータにコンパイル対象のZipファイル（`main.cpp`を含む）を指定します。`board`パラメータでターゲットボードを指定します。
 
 **対応ボード:**
 
-| ボード名 | デバイス |
-|---------|---------|
-| `m5stack-atoms3` | M5AtomS3 |
-| `m5stack-atoms3-lite` | M5AtomS3 Lite |
-| `m5stack-core2` | M5Stack Core2 |
-| `m5stack-cores3` | M5Stack CoreS3 |
-| `m5stick-c-plus2` | M5StickC Plus2 |
+| ボード名 | デバイス | チップ |
+|---------|---------|--------|
+| `m5stack-atoms3` | M5AtomS3 | ESP32-S3 |
+| `m5stack-atoms3-lite` | M5AtomS3 Lite | ESP32-S3 |
+| `m5stack-core2` | M5Stack Core2 | ESP32 |
+| `m5stack-cores3` | M5Stack CoreS3 | ESP32-S3 |
+| `m5stick-c-plus2` | M5StickC Plus2 | ESP32 |
 
 **サポートボード一覧の取得:**
 
@@ -82,14 +91,35 @@ curl -X 'GET' \
 
 **コンパイルリクエスト:**
 
+`board`パラメータはURLクエリパラメータで指定します。省略時は`m5stack-atoms3`がデフォルトです。
+
+```bash
+curl -X 'POST' \
+  'http://localhost:8000/api/compile/platformio?board=m5stack-atoms3' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: multipart/form-data' \
+  -F 'file=@main.zip;type=application/zip' \
+  -F 'user_id=hoge'
+```
+
+**ボード指定なし（デフォルト: m5stack-atoms3）:**
+
 ```bash
 curl -X 'POST' \
   'http://localhost:8000/api/compile/platformio' \
   -H 'accept: application/json' \
   -H 'Content-Type: multipart/form-data' \
   -F 'file=@main.zip;type=application/zip' \
-  -F 'board=m5stack-atoms3' \
   -F 'user_id=hoge'
+```
+
+**レスポンス例:**
+
+```json
+{
+  "task_id": "abc123-...",
+  "url": "//localhost:8000/api/compile/abc123-.../webserial?board=m5stack-atoms3"
+}
 ```
 
 **サンプルコード (main.cpp):**
@@ -127,6 +157,35 @@ curl -X 'GET' \
   -H 'accept: application/json'
 ```
 
+### WebUSB書き込み (micro:bit v2)
+
+micro:bit v2向けに、ブラウザから直接HEXファイルを書き込むことができます。DAPjs ライブラリを使用してCMSIS-DAP経由で書き込みます。
+
+**対応ブラウザ:** Chrome, Edge（WebUSB対応ブラウザ）
+
+`/api/compile/{task_id}/webusb`にアクセスすると、WebUSB書き込みページが表示されます。
+
+```
+http://localhost:8000/api/compile/{task_id}/webusb
+```
+
+**使い方:**
+
+1. 上記URLにブラウザでアクセス
+2. micro:bit v2をUSBケーブルで接続
+3. 「WebUSBで書き込む」ボタンをクリック
+4. ポップアップでmicro:bitデバイスを選択
+5. 自動的に書き込みが開始され、完了後micro:bitが再起動します
+
+**代替方法:**
+
+WebUSBがうまくいかない場合は、「HEXをダウンロード」ボタンでファイルを保存し、MICROBITドライブに手動でコピーすることもできます。
+
+**技術詳細:**
+- 使用ライブラリ: [DAPjs](https://github.com/ArmMbed/dapjs) v2.3.0
+- プロトコル: CMSIS-DAP over WebUSB
+- VendorID: 0x0d28, ProductID: 0x0204
+
 ### WebSerial書き込み (M5Stack系)
 
 M5Stack系デバイス（ESP32）向けに、ブラウザから直接ファームウェアを書き込むことができます。ESP Web Toolsを使用しています。
@@ -146,6 +205,58 @@ http://localhost:8000/api/compile/{task_id}/webserial?board=m5stack-atoms3
 3. 「デバイスに書き込む」ボタンをクリック
 4. シリアルポートを選択して書き込み開始
 
+**ESP32フラッシュ構造:**
+
+ESP Web Toolsは、以下の3つのバイナリを正しいオフセットに書き込みます：
+
+| ファイル | オフセット (ESP32-S3) | オフセット (ESP32) | 説明 |
+|---------|---------------------|-------------------|------|
+| bootloader.bin | 0x0000 | 0x1000 | ブートローダー |
+| partitions.bin | 0x8000 | 0x8000 | パーティションテーブル |
+| firmware.bin | 0x10000 | 0x10000 | アプリケーション |
+
+### 個別バイナリの取得 (PlatformIO)
+
+PlatformIOでコンパイルした場合、以下のエンドポイントで個別のバイナリを取得できます：
+
+```bash
+# ファームウェア
+curl -O http://localhost:8000/api/compile/{task_id}/firmware.bin
+
+# ブートローダー
+curl -O http://localhost:8000/api/compile/{task_id}/bootloader.bin
+
+# パーティションテーブル
+curl -O http://localhost:8000/api/compile/{task_id}/partitions.bin
+```
+
+### ESP Web Tools マニフェスト
+
+ESP Web Tools用のマニフェストファイルを取得できます：
+
+```bash
+curl http://localhost:8000/api/compile/{task_id}/manifest.json?board=m5stack-atoms3
+```
+
+**レスポンス例:**
+
+```json
+{
+  "name": "MDD Firmware (M5AtomS3)",
+  "version": "1.0.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {"path": "http://localhost:8000/api/compile/{task_id}/bootloader.bin", "offset": 0},
+        {"path": "http://localhost:8000/api/compile/{task_id}/partitions.bin", "offset": 32768},
+        {"path": "http://localhost:8000/api/compile/{task_id}/firmware.bin", "offset": 65536}
+      ]
+    }
+  ]
+}
+```
+
 ### コンパイルタスクの一覧の取得
 
 `/api/compile/list`にGETリクエストを送信することで，コンパイルタスクの一覧を最新から100件を取得することができます。
@@ -156,5 +267,34 @@ curl -X 'GET' \
   -H 'accept: application/json'
 ```
 
+### 期間指定でのタスク一覧取得
 
+`/api/compile/list/range/{start}/{end}`で期間を指定してタスク一覧を取得できます。日付は`YYYY-MM-DD`形式で指定します。
 
+```bash
+curl -X 'GET' \
+  'http://localhost:8000/api/compile/list/range/2024-01-01/2024-12-31' \
+  -H 'accept: application/json'
+```
+
+## アーキテクチャ
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  API Server │────▶│    Redis    │◀────│   Celery    │
+│  (FastAPI)  │     │  (Broker)   │     │  (Worker)   │
+└─────────────┘     └─────────────┘     └──────┬──────┘
+       │                                       │
+       │                                       ▼
+       │                              ┌─────────────────┐
+       │                              │ Docker Containers│
+       ▼                              │  - codal_env    │
+┌─────────────┐                       │  - platformio_env│
+│ PostgreSQL  │                       └─────────────────┘
+│ (Results)   │
+└─────────────┘
+```
+
+## ライセンス
+
+MIT License

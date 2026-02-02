@@ -7,6 +7,9 @@ if [ -z "$ZIP_FILE" ] || [ -z "$OUTPUT_PATH" ]; then
     exit 1
 fi
 
+# Remove existing main.cpp to avoid multiple definition errors
+rm -f ./source/main.cpp
+
 # Unzip the source code
 unzip -o "$ZIP_FILE" -d ./source
 
