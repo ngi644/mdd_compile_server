@@ -7,8 +7,9 @@ if [ -z "$ZIP_FILE" ] || [ -z "$OUTPUT_PATH" ]; then
     exit 1
 fi
 
-# Remove existing main.cpp to avoid multiple definition errors
-# rm -f ./source/main.cpp
+# Remove existing source files to avoid conflicts
+rm -f ./source/main.cpp
+rm -f ./source/Main.cpp
 
 # Unzip the source code
 unzip -o "$ZIP_FILE" -d ./source
@@ -17,11 +18,18 @@ if [ -e ./source/__MACOSX ]; then
     rm -r ./source/__MACOSX
 fi
 
-# Create a temporary build directory
-mkdir -p build
+# Clean previous build artifacts (keep library cache, only rebuild user code)
+rm -f MICROBIT.hex MICROBIT.bin
+
+# Remove only user source object files to force recompilation
+rm -rf build/source/
+rm -rf build/CMakeFiles/MICROBIT.dir/
+
+# Touch source files to ensure they are seen as modified
+find ./source -name "*.cpp" -exec touch {} \;
+find ./source -name "*.h" -exec touch {} \;
 
 # Compile the source code
-cmake . -GNinja
 ninja
 cp MICROBIT.hex $OUTPUT_PATH
 
