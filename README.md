@@ -295,6 +295,34 @@ curl -X 'GET' \
 └─────────────┘
 ```
 
+## Changelog
+
+### v1.1.0 (2026-02)
+
+**新機能:**
+- WebUSB書き込み機能追加 (micro:bit v2向け、DAPjs使用)
+- WebSerial書き込み機能追加 (M5Stack系向け、ESP Web Tools使用)
+- トップページの改善（対応ターゲット一覧、ボード情報表示）
+- 期間指定でのタスク一覧取得API (`/api/compile/list/range/{start}/{end}`)
+
+**改善:**
+- PlatformIO APIの`board`パラメータをURLクエリパラメータに変更
+- CODALビルドキャッシュ問題の修正（ユーザーコードのみ再コンパイル）
+- コンパイルワーカーのデバッグログ追加
+- Mixed Content問題の修正（プロトコル相対URL対応）
+
+**技術詳細:**
+- DAPjs v2.3.0によるCMSIS-DAP経由のWebUSB書き込み
+- ESP Web Tools v10によるWebSerial書き込み
+- Ninjaビルドシステムのキャッシュ最適化
+
+### v1.0.0 (初期リリース)
+
+- CODAL (micro:bit v2) コンパイル機能
+- PlatformIO (M5Stack系) コンパイル機能
+- Celery/Redisによる非同期タスク処理
+- PostgreSQLによる結果保存
+
 ## ライセンス
 
 MIT License
