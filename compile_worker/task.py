@@ -7,9 +7,15 @@ from shared import models
 from shared.database import SessionLocal, engine
 import base64
 from shared.celery_config import broker_url, result_backend
+import logging
+import hashlib
 
 import io
 import tarfile
+
+# ログ設定
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 app = Celery("tasks", broker=broker_url, backend=result_backend)
 app.config_from_object("shared.celery_config")
@@ -69,46 +75,78 @@ def save_result(task_id: str, trace_back:str, result: bytes):
 def compile_codal(self, source_code: str, user_id: str = None):
     """ C++ のソースコードをコンパイルして HEX ファイルを生成する
     """
-    create_result(self.request.id, user_id)
+    task_id = self.request.id
+    logger.info(f"[{task_id}] ===== CODAL コンパイル開始 =====")
+    logger.info(f"[{task_id}] user_id: {user_id}")
+
+    create_result(task_id, user_id)
     docker_client = docker.from_env()
-    # コンテナを作成
-    container = docker_client.containers.run("mdd_compile_server-codal_env", detach=True, name=f"codal_{self.request.id}")
-    # 環境変数を設定
+
+    # ソースコードのハッシュを計算（デバッグ用）
     source_code_bytes = base64.b64decode(source_code.encode('utf-8'))
-    tar_buffer = create_tar_archive(source_code_bytes, self.request.id)
+    source_hash = hashlib.md5(source_code_bytes).hexdigest()
+    logger.info(f"[{task_id}] ソースZIPサイズ: {len(source_code_bytes)} bytes, MD5: {source_hash}")
+
+    # コンテナを作成
+    container = docker_client.containers.run("mdd_compile_server-codal_env", detach=True, name=f"codal_{task_id}")
+    logger.info(f"[{task_id}] コンテナ作成完了: codal_{task_id}")
+
+    tar_buffer = create_tar_archive(source_code_bytes, task_id)
 
     # ファイルをコンテナにコピー
     container.put_archive('/microbit-v2-samples', tar_buffer)
+    logger.info(f"[{task_id}] ZIPファイルをコンテナにコピー完了")
+
+    # コピー後のソースディレクトリを確認
+    ls_result = container.exec_run("ls -la /microbit-v2-samples/source/", workdir="/microbit-v2-samples")
+    logger.info(f"[{task_id}] コピー前のsource/ディレクトリ:\n{ls_result.output.decode('utf-8')}")
 
     env = {
-        "ZIP_FILE": f"/microbit-v2-samples/{self.request.id}.zip",
-        "OUTPUT_PATH": f"/tmp/{self.request.id}.hex"
+        "ZIP_FILE": f"/microbit-v2-samples/{task_id}.zip",
+        "OUTPUT_PATH": f"/tmp/{task_id}.hex"
     }
+    logger.info(f"[{task_id}] 環境変数: {env}")
 
     # シェルスクリプトを実行
+    logger.info(f"[{task_id}] compile_codal.sh 実行開始...")
     compile_result = container.exec_run("bash compile_codal.sh", environment=env, workdir="/microbit-v2-samples")
     trace_back = compile_result.output.decode('utf-8')
+    logger.info(f"[{task_id}] compile_codal.sh 終了コード: {compile_result.exit_code}")
+    logger.info(f"[{task_id}] コンパイル出力:\n{trace_back[-2000:]}")  # 最後の2000文字のみ
+
+    # コンパイル後のソースディレクトリを確認
+    ls_result_after = container.exec_run("ls -la /microbit-v2-samples/source/", workdir="/microbit-v2-samples")
+    logger.info(f"[{task_id}] コンパイル後のsource/ディレクトリ:\n{ls_result_after.output.decode('utf-8')}")
+
+    # main.cppの内容を確認（最初の500文字）
+    cat_result = container.exec_run("head -20 /microbit-v2-samples/source/main.cpp", workdir="/microbit-v2-samples")
+    logger.info(f"[{task_id}] main.cpp の先頭:\n{cat_result.output.decode('utf-8')}")
 
     # コンパイル結果（HEXファイル）を取得
     try:
-        hex_file_stream, stats = container.get_archive(f"/tmp/{self.request.id}.hex")
+        hex_file_stream, stats = container.get_archive(f"/tmp/{task_id}.hex")
 
         byte_stream = io.BytesIO()
         for chunk in hex_file_stream:
             byte_stream.write(chunk)
-        byte_stream.seek(0) 
+        byte_stream.seek(0)
         with tarfile.open(fileobj=byte_stream) as tar_file:
-            hex_file = tar_file.extractfile(f'{self.request.id}.hex')
+            hex_file = tar_file.extractfile(f'{task_id}.hex')
+            hex_data = hex_file.read()
+            hex_hash = hashlib.md5(hex_data).hexdigest()
+            logger.info(f"[{task_id}] HEXファイルサイズ: {len(hex_data)} bytes, MD5: {hex_hash}")
             # コンパイル結果を DB に保存
-            save_result(self.request.id, trace_back, hex_file.read())
-    except docker.errors.APIError:
+            save_result(task_id, trace_back, hex_data)
+            logger.info(f"[{task_id}] DBに保存完了")
+    except docker.errors.APIError as e:
         # コンパイルに失敗した場合、HEXファイルが存在しないため、APIError が発生します
-        # その場合は、空のバイト列を返します
-        save_result(self.request.id, trace_back, b"")
+        logger.error(f"[{task_id}] HEXファイル取得エラー: {e}")
+        save_result(task_id, trace_back, b"")
 
     # コンテナを削除
     container.stop(timeout=0)
     container.remove()
+    logger.info(f"[{task_id}] ===== CODAL コンパイル終了 =====")
 
     return compile_result.exit_code
 
