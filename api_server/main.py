@@ -294,8 +294,8 @@ async def get_result_webserial(request: Request, task_id: str, board: str = "m5s
         data["trace_back"] = task_result.trace_back
         return templates.TemplateResponse("error_template.html", {"request": request, "data": data})
 
-    # /webserial を /manifest.json に置き換え
-    manifest_url = urljoin(request.url._url, f"/api/compile/{task_id}/manifest.json?board={board}")
+    # /webserial を /manifest.json に置き換え（プロトコル相対URLを使用してMixed Content回避）
+    manifest_url = _remove_protocol(urljoin(request.url._url, f"/api/compile/{task_id}/manifest.json?board={board}"))
     data = {
         "title": "WebSerial 書き込み",
         "task_id": task_id,
@@ -430,8 +430,8 @@ async def get_webserial_manifest(request: Request, task_id: str, board: str = "m
     chip_family = "ESP32-S3" if is_s3 else "ESP32"
     bootloader_offset = 0 if is_s3 else 0x1000
 
-    # ベースURLを生成
-    base_url = urljoin(request.url._url, f"/api/compile/{task_result.task_id}")
+    # ベースURLを生成（プロトコル相対URLを使用してMixed Content回避）
+    base_url = _remove_protocol(urljoin(request.url._url, f"/api/compile/{task_result.task_id}"))
 
     # ZIPからファイルの存在を確認してパーツリストを構築
     parts = []
